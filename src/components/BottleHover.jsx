@@ -15,6 +15,7 @@ const BottleShader = ({ normalImage, hoverImage }) => {
   const displacementRef = useRef(0)
   const trailRef = useRef([]) // {x,y,size,alpha}
   const { viewport } = useThree()
+  const scaledRef = useRef({ w: viewport.width, h: viewport.height })
 
   const textures = useTexture({
     normalTex: normalImage,
@@ -36,8 +37,31 @@ const BottleShader = ({ normalImage, hoverImage }) => {
       
       materialRef.current.uniforms.uTexture1.value = textures.normalTex
       materialRef.current.uniforms.uTexture2.value = textures.hoverTex
+
+      // Calculate aspect ratio from image (only once when textures load)
+      if (textures.normalTex.source && textures.normalTex.source.data) {
+        const img = textures.normalTex.source.data
+        const imageAspect = img.width / img.height
+
+        // Scale plane to fill viewport while maintaining aspect ratio
+        let width = viewport.width
+        let height = viewport.width / imageAspect
+
+        // If height exceeds viewport, constrain by height
+        if (height > viewport.height) {
+          height = viewport.height
+          width = viewport.height * imageAspect
+        }
+
+        scaledRef.current = { w: width, h: height }
+        
+        // Log dimensions for reference
+        console.log('Window Size:', { viewportWidth: viewport.width, viewportHeight: viewport.height })
+        console.log('Image Size:', { imageWidth: img.width, imageHeight: img.height })
+        console.log('Plane Size:', { planeWidth: width, planeHeight: height })
+      }
     }
-  }, [textures])
+  }, [textures.normalTex, textures.hoverTex, viewport.width, viewport.height])
 
   useFrame((state) => {
     if (!materialRef.current) return
@@ -56,7 +80,7 @@ const BottleShader = ({ normalImage, hoverImage }) => {
     for (let i = 0; i < trail.length; i++) {
       // Tuning: trail fade rate per frame (0.90-0.99 typical).
       // Lower value fades faster; higher value lingers longer.
-      trail[i].alpha *= 0.97
+      trail[i].alpha *= 0.98
     }
     // remove faint points
     // Tuning: minimum alpha threshold before removing oldest trail point.
@@ -105,7 +129,7 @@ const BottleShader = ({ normalImage, hoverImage }) => {
         const v = Math.min(1, velocityRef.current * 8)
         // Tuning: fluid blob size (base + range scaled by velocity)
         // Increase base (120) for larger constant reveal; increase range (220) for bigger speed-based expansion.
-        const size = 20.0 + v * 2.0 // gaussian size factor
+        const size = 35.0 + v * 20.0 // gaussian size factor
         trailRef.current.push({ x: newX, y: newY, size, alpha: 1 })
         if (trailRef.current.length > MAX_TRAIL) trailRef.current.shift()
       }
@@ -186,14 +210,14 @@ const BottleShader = ({ normalImage, hoverImage }) => {
       }
 
       // Edge wobble adds fluid look
-      // Tuning: wobble frequency (uv*6.0), time speed (uTime*0.2), amplitude (* 0.35)
-      float edgeNoise = (fbm(uv*6.0 + vec2(uTime*0.2)) - 0.5) * 0.35;
+      // Tuning: wobble frequency (uv*2.0), time speed (uTime*0.2), amplitude (* 0.35)
+      float edgeNoise = (fbm(uv*3.0 + vec2(uTime*0.5)) - 0.5) * 0.15;
       mask += edgeNoise;
       mask = clamp(mask, 0.0, 1.0);
 
       // Smooth thresholding
       // Tuning: reveal softness via thresholds (0.35 start, 0.65 end)
-      float alpha = smoothstep(0.35, 0.65, mask) * uDisplacement;
+      float alpha = smoothstep(0.25, 0.65, mask) * uDisplacement;
 
       // Sample base always with original UVs (no distortion)
       vec4 baseTex = texture2D(uTexture1, uv);
@@ -220,9 +244,9 @@ const BottleShader = ({ normalImage, hoverImage }) => {
   `
 
   return (
-    // Tuning: mesh scale stretches to viewport. Adjust to constrain the effect area.
-    <mesh ref={meshRef} scale={[viewport.width, viewport.height, 1]}>
-      <planeGeometry args={[1, 1, 1, 1]} />
+    // Use actual image dimensions for plane
+    <mesh ref={meshRef}>
+      <planeGeometry args={[scaledRef.current.w, scaledRef.current.h, 1, 1]} />
       <shaderMaterial
         ref={materialRef}
         uniforms={{
@@ -246,7 +270,7 @@ const BottleShader = ({ normalImage, hoverImage }) => {
 const BottleHover = ({ normalImage, hoverImage }) => {
   return (
     <Canvas>
-      <BottleShader normalImage={normalImage} hoverImage={hoverImage} />
+      <BottleShader  normalImage={normalImage} hoverImage={hoverImage} />
     </Canvas>
   )
 }
